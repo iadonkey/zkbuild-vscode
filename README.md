@@ -38,33 +38,13 @@ Create a `.Zeugwerk/build.json` file in your workspace root with the following s
 ## Usage
 
 1. Open a TwinCAT project workspace in VS Code
-2. Ensure `build.json` exists with your credentials
-3. Run the command `Build with Zeugwerk` from the Command Palette (Ctrl+Shift+P / Cmd+Shift+P)
-4. The extension will:
+2. Run the command `Build with Zeugwerk` from the Command Palette (Ctrl+Shift+P / Cmd+Shift+P)
+3. The extension will:
    - Archive your project (excluding files in `.gitignore`)
    - Upload it to the build service
    - Poll for build status
    - Download artifacts when ready
    - Parse `build.log` and show errors/warnings in VS Code
-
-## How It Works
-
-The extension:
-1. Validates that `build.json` exists
-2. Creates a zip archive of your project, excluding files listed in `.gitignore` (and `build.json` itself)
-3. Sends the archive to the Zeugwerk build service API
-4. Polls the build status every 10 seconds
-5. Downloads artifacts when the build completes
-6. Extracts artifacts to the `archive/` folder
-7. Parses `build.log` and displays errors/warnings as VS Code diagnostics
-
-## Build Status Codes
-
-- **203**: Build is queued/pending (polling continues)
-- **201**: Build completed successfully (no artifacts)
-- **202**: Build completed with artifacts (downloads and extracts)
-
-## Development
 
 ### Setup
 
@@ -107,19 +87,3 @@ npm run watch
    - The original VS Code window shows debug information and logs
 
 6. **To stop debugging**: Press Shift+F5 or click the Stop button
-
-### Testing Checklist
-
-Before testing, make sure you have:
-- [ ] A test TwinCAT project workspace
-- [ ] A `.Zeugwerk/build.json` file in the workspace root with valid credentials
-- [ ] The extension compiled (`npm run compile` or `npm run watch`)
-- [ ] The Extension Development Host window open (after pressing F5)
-
-### Common Issues
-
-- **Extension not found**: Make sure you've run `npm install` and `npm run compile`
-- **TypeScript errors**: Check the Problems panel and fix any compilation errors
-- **Breakpoints not working**: Ensure the code is compiled and the debugger is attached
-- **Command not appearing**: Reload the Extension Development Host window (Ctrl+R or Cmd+R)
-
