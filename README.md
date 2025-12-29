@@ -133,4 +133,4 @@ Before testing, make sure you have:
 
 ## License
 
-[Add your license here]
+MIT License - see [LICENSE](LICENSE) file for details.

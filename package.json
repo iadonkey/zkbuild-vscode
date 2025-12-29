@@ -3,6 +3,7 @@
   "displayName": "Zeugwerk Build Service",
   "description": "Remote TwinCAT project building using Zeugwerk build service",
   "version": "0.1.0",
+  "license": "MIT",
   "engines": {
     "vscode": "^1.74.0"
   },
@@ -24,7 +25,10 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "package": "npx @vscode/vsce package",
+    "install": "npm run compile && npx @vscode/vsce package -o zkbuild.vsix && code --install-extension zkbuild.vsix",
+    "install:force": "npm run compile && npx @vscode/vsce package -o zkbuild.vsix && code --install-extension zkbuild.vsix --force"
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.7",

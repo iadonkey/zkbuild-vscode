@@ -6,6 +6,7 @@ import AdmZip from 'adm-zip';
 import FormData from 'form-data';
 import ignore from 'ignore';
 import * as https from 'https';
+import * as crypto from 'crypto';
 import { IncomingMessage } from 'http';
 
 interface BuildConfig {
@@ -32,6 +33,14 @@ class BuildService {
         this.outputChannel = outputChannel;
         this.diagnosticCollection = diagnosticCollection;
     }
+
+    private createMD5Hash(username: string, workspaceFolder: vscode.WorkspaceFolder): string {
+        // Use just the folder name instead of full path
+        const folderName = path.basename(workspaceFolder.uri.fsPath);
+        const combined = `${username}:${folderName}`;
+    
+        return crypto.createHash('md5').update(combined).digest('hex');
+    }    
 
     private log(message: string) {
         this.outputChannel.appendLine(message);
