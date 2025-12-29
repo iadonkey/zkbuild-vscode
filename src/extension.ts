@@ -11,8 +11,6 @@ import * as keytar from 'keytar';
 import { IncomingMessage } from 'http';
 
 interface BuildConfig {
-    username: string;
-    password: string;
     tcversion?: string;
     'working-directory'?: string;
     version?: string;
