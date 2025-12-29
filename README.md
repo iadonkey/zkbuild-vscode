@@ -22,8 +22,6 @@ Create a `.Zeugwerk/build.json` file in your workspace root with the following s
 
 ```json
 {
-  "username": "your-username",
-  "password": "your-password",
   "tcversion": "optional-tc-version",
   "working-directory": "optional-working-directory",
   "version": "optional-version",
@@ -36,12 +34,6 @@ Create a `.Zeugwerk/build.json` file in your workspace root with the following s
   "platform": "optional-platform"
 }
 ```
-
-**Required fields:**
-- `username`: Your Zeugwerk build service username
-- `password`: Your Zeugwerk build service password
-
-All other fields are optional and correspond to the build parameters used by the build service.
 
 ## Usage
 

@@ -7,6 +7,7 @@ import FormData from 'form-data';
 import ignore from 'ignore';
 import * as https from 'https';
 import * as crypto from 'crypto';
+import * as keytar from 'keytar';
 import { IncomingMessage } from 'http';
 
 interface BuildConfig {
@@ -32,6 +33,46 @@ class BuildService {
     constructor(outputChannel: vscode.OutputChannel, diagnosticCollection: vscode.DiagnosticCollection) {
         this.outputChannel = outputChannel;
         this.diagnosticCollection = diagnosticCollection;
+    }
+
+    private async resetCredentials() {
+        await keytar.deletePassword("zkbuild-vscode", "user_credentials");
+        vscode.window.showInformationMessage('Credentials have been cleared.');
+    }    
+
+    private async getCredentials(): Promise<{ username: string, password: string }> {
+        // Try to get stored credentials
+        const storedPassword = await keytar.getPassword("zkbuild-vscode", "user_credentials");
+        
+        if (storedPassword) {
+            // If found, parse it (assuming you stored as JSON string)
+            return JSON.parse(storedPassword);
+        }
+
+        // If not found, ask user for credentials
+        const username = await vscode.window.showInputBox({
+            prompt: 'Enter your username',
+            ignoreFocusOut: true
+        });
+
+        if (!username) {
+            throw new Error('Username is required');
+        }
+
+        const password = await vscode.window.showInputBox({
+            prompt: 'Enter your password',
+            password: true,
+            ignoreFocusOut: true
+        });
+
+        if (!password) {
+            throw new Error('Password is required');
+        }
+
+        // Store credentials securely in Windows Credential Manager
+        await keytar.setPassword("zkbuild-vscode", "user_credentials", JSON.stringify({ username, password }));
+
+        return { username, password };
     }
 
     private createMD5Hash(username: string, workspaceFolder: vscode.WorkspaceFolder): string {
@@ -203,12 +244,15 @@ class BuildService {
         });
     }
 
-    private async login(config: BuildConfig): Promise<string | null> {
+    private async login(): Promise<string | null> {
         this.log('Login...');
         
         const formData = new FormData();
-        formData.append('username', config.username);
-        formData.append('password', config.password);
+
+        const { username, password } = await this.getCredentials();
+
+        formData.append('username', username);
+        formData.append('password', password);
 
         try {
             const response = await this.makeRequest('/login', formData);
@@ -233,6 +277,7 @@ class BuildService {
                 const errorMsg = response.statusMessage || 'Login failed!';
                 this.log(errorMsg);
                 vscode.window.showErrorMessage(errorMsg);
+                await this.resetCredentials();
                 return null;
             }
 
@@ -269,22 +314,25 @@ class BuildService {
         }
     }
 
-    private async requestBuild(config: BuildConfig, zipPath: string, bearerToken: string): Promise<string | null> {
+    private async requestBuild(zipPath: string, bearerToken: string, config?: BuildConfig | null): Promise<string | null> {
         this.log('Requesting build...');
         
         const formData = new FormData();
         formData.append('async', 'true');
         
-        if (config.tcversion) formData.append('tcversion', config.tcversion);
-        if (config['working-directory']) formData.append('working-directory', config['working-directory']);
-        if (config.version) formData.append('version', config.version);
-        if (config['skip-build']) formData.append('skip-build', config['skip-build']);
-        if (config['skip-test']) formData.append('skip-test', config['skip-test']);
-        if (config['variant-build']) formData.append('variant-build', config['variant-build']);
-        if (config['variant-test']) formData.append('variant-test', config['variant-test']);
-        if (config['static-analysis']) formData.append('static-analysis', config['static-analysis']);
-        if (config.installer) formData.append('installer', config.installer);
-        if (config.platform) formData.append('platform', config.platform);
+        if (config) {
+            if (config.tcversion) formData.append('tcversion', config.tcversion);
+            if (config['working-directory']) formData.append('working-directory', config['working-directory']);
+            if (config.version) formData.append('version', config.version);
+            if (config['skip-build']) formData.append('skip-build', config['skip-build']);
+            if (config['skip-test']) formData.append('skip-test', config['skip-test']);
+            if (config['variant-build']) formData.append('variant-build', config['variant-build']);
+            if (config['variant-test']) formData.append('variant-test', config['variant-test']);
+            if (config['static-analysis']) formData.append('static-analysis', config['static-analysis']);
+            if (config.installer) formData.append('installer', config.installer);
+            if (config.platform) formData.append('platform', config.platform);
+        }
+
         
         // Add the zip file
         formData.append('file', fs.createReadStream(zipPath), {
@@ -391,10 +439,13 @@ class BuildService {
         });
     }
 
-    private async downloadArtifact(config: BuildConfig, artifactUrl: string): Promise<Buffer | null> {
+    private async downloadArtifact(artifactUrl: string): Promise<Buffer | null> {
+        const { username, password } = await this.getCredentials();
+
         return new Promise((resolve, reject) => {
             const url = new URL(artifactUrl);
-            const auth = Buffer.from(`${config.username}:${config.password}`).toString('base64');
+
+            const auth = Buffer.from(`${username}:${password}`).toString('base64');
             
             const options: https.RequestOptions = {
                 hostname: url.hostname,
@@ -525,14 +576,6 @@ class BuildService {
 
         // Read config
         const config = await this.readConfig(workspaceFolder);
-        if (!config) {
-            return;
-        }
-
-        if (!config.username || !config.password) {
-            vscode.window.showErrorMessage('Config must include username and password');
-            return;
-        }
 
         // Create zip file
         this.log('Creating project archive...');
@@ -544,13 +587,13 @@ class BuildService {
 
         try {
             // Login first to get bearer token
-            const bearerToken = await this.login(config);
+            const bearerToken = await this.login();
             if (!bearerToken) {
                 return;
             }
 
             // Request build
-            const token = await this.requestBuild(config, zipPath, bearerToken);
+            const token = await this.requestBuild(zipPath, bearerToken, config);
             if (!token) {
                 return;
             }
@@ -571,7 +614,7 @@ class BuildService {
 
             if (result.status === '202' && result.artifact) {
                 this.log('\n\nDownloading artifacts...');
-                const artifactBuffer = await this.downloadArtifact(config, result.artifact);
+                const artifactBuffer = await this.downloadArtifact(result.artifact);
                 
                 if (!artifactBuffer) {
                     vscode.window.showErrorMessage('Failed to download artifacts');
