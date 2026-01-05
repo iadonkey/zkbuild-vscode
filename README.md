@@ -14,7 +14,8 @@ A VS Code extension for building TwinCAT projects remotely using the Zeugwerk bu
 ## Requirements
 
 - VS Code 1.74.0 or higher
-- A `.Zeugwerk/build.json` file in your workspace root with build configuration
+- `.Zeugwerk/config.json` file in your workspace root with build configuration
+- (Optional build configuration) `.Zeugwerk/build.json` file in your workspace root with build configuration
 
 ## Configuration
 
