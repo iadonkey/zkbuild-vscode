@@ -7,7 +7,6 @@ import FormData from 'form-data';
 import ignore from 'ignore';
 import * as https from 'https';
 import * as crypto from 'crypto';
-import * as keytar from 'keytar';
 import { IncomingMessage } from 'http';
 
 interface BuildConfig {
@@ -24,54 +23,73 @@ interface BuildConfig {
 }
 
 class BuildService {
+    private context: vscode.ExtensionContext;
     private outputChannel: vscode.OutputChannel;
     private diagnosticCollection: vscode.DiagnosticCollection;
     private readonly API_URL = 'https://api.zeugwerk.dev/index.php';
 
-    constructor(outputChannel: vscode.OutputChannel, diagnosticCollection: vscode.DiagnosticCollection) {
+    constructor(context: vscode.ExtensionContext, outputChannel: vscode.OutputChannel, diagnosticCollection: vscode.DiagnosticCollection) {
+        this.context = context;
         this.outputChannel = outputChannel;
         this.diagnosticCollection = diagnosticCollection;
     }
 
     private async resetCredentials() {
-        await keytar.deletePassword("zkbuild-vscode", "user_credentials");
+        await this.context.secrets.delete("zkbuild-vscode.user_credentials");
         vscode.window.showInformationMessage('Credentials have been cleared.');
-    }    
+    }  
 
-    private async getCredentials(): Promise<{ username: string, password: string }> {
+    private async getCredentials(): Promise<{ username: string; password: string }> {
         // Try to get stored credentials
-        const storedPassword = await keytar.getPassword("zkbuild-vscode", "user_credentials");
-        
-        if (storedPassword) {
+        const storedCredentials = await this.context.secrets.get("zkbuild-vscode.user_credentials");
+
+        if (storedCredentials) {
             // If found, parse it (assuming you stored as JSON string)
-            return JSON.parse(storedPassword);
+            return JSON.parse(storedCredentials);
         }
 
-        // If not found, ask user for credentials
-        const username = await vscode.window.showInputBox({
-            prompt: 'Enter your username',
-            ignoreFocusOut: true
-        });
+        // Helper function to prompt for input in a code-server safe way
+        const askInput = (prompt: string, password = false): Promise<string | undefined> => {
+            return new Promise(resolve => {
+                const input = vscode.window.createInputBox();
+                input.title = prompt;
+                input.password = password;
+                input.ignoreFocusOut = true;
 
+                input.onDidAccept(() => {
+                    resolve(input.value);
+                    input.dispose();
+                });
+
+                input.onDidHide(() => {
+                    resolve(undefined);
+                    input.dispose();
+                });
+
+                input.show();
+            });
+        };
+
+        // Ask user for username and password
+        const username = await askInput("Enter Zeugwerk Username");
         if (!username) {
-            throw new Error('Username is required');
+            throw new Error("Username is required");
         }
 
-        const password = await vscode.window.showInputBox({
-            prompt: 'Enter your password',
-            password: true,
-            ignoreFocusOut: true
-        });
-
+        const password = await askInput("Enter Zeugwerk Password", true);
         if (!password) {
-            throw new Error('Password is required');
+            throw new Error("Password is required");
         }
 
-        // Store credentials securely in Windows Credential Manager
-        await keytar.setPassword("zkbuild-vscode", "user_credentials", JSON.stringify({ username, password }));
+        // Store credentials securely using context.secrets
+        await this.context.secrets.store(
+            "zkbuild-vscode.user_credentials",
+            JSON.stringify({ username, password })
+        );
 
         return { username, password };
     }
+
 
     private createMD5Hash(username: string, workspaceFolder: vscode.WorkspaceFolder): string {
         // Use just the folder name instead of full path
@@ -86,9 +104,9 @@ class BuildService {
     }
 
     private async checkConfigFile(workspaceFolder: vscode.WorkspaceFolder): Promise<boolean> {
-        const configPath = path.join(workspaceFolder.uri.fsPath, '.Zeugwerk', 'build.json');
+        const configPath = path.join(workspaceFolder.uri.fsPath, '.Zeugwerk', 'config.json');
         if (!fs.existsSync(configPath)) {
-            vscode.window.showErrorMessage('Missing build.json file. Please create it with your build configuration.');
+            vscode.window.showErrorMessage('Missing config.json file.');
             return false;
         }
         return true;
@@ -96,6 +114,9 @@ class BuildService {
 
     private async readConfig(workspaceFolder: vscode.WorkspaceFolder): Promise<BuildConfig | null> {
         const configPath = path.join(workspaceFolder.uri.fsPath, '.Zeugwerk', 'build.json');
+        if (!fs.existsSync(configPath))
+            return null;
+
         try {
             const configContent = fs.readFileSync(configPath, 'utf8');
             return JSON.parse(configContent) as BuildConfig;
@@ -562,6 +583,58 @@ class BuildService {
         return diagnosticsByFile;
     }
 
+    async findBuildFolder(startDir: string, workspaceRoot: string): Promise<string | null> {
+        let currentDir = startDir;
+
+        while (true) {
+            const valid = fs.existsSync(path.join(currentDir, '.Zeugwerk', 'config.json')) 
+            if (valid) {
+                return currentDir;
+            }
+
+            // Stop if we reached the workspace root or filesystem root
+            if (currentDir === workspaceRoot || path.dirname(currentDir) === currentDir) {
+                break;
+            }
+
+            // Go one level up
+            currentDir = path.dirname(currentDir);
+        }
+
+        return null;
+    }
+
+    async getWorkspaceFolderForActiveFile(): Promise<vscode.WorkspaceFolder | null> {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+            return null; // No open file
+        }
+
+        const currentFile = editor.document.uri.fsPath;
+        const currentFileDir = path.dirname(currentFile);
+
+        // Use the first workspace folder as the root boundary
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders || workspaceFolders.length === 0) {
+            return null;
+        }
+        const workspaceRoot = workspaceFolders[0].uri.fsPath;
+
+        const folder = await this.findBuildFolder(currentFileDir, workspaceRoot);
+
+        if (folder) {
+            // Wrap the folder path as a WorkspaceFolder-like object for buildService
+            return {
+                uri: vscode.Uri.file(folder),
+                name: path.basename(folder),
+                index: 0
+            };
+        }
+
+        // Fallback to the root of the workspace
+        return workspaceFolders[0];
+    }
+
     async build(workspaceFolder: vscode.WorkspaceFolder): Promise<void> {
         this.outputChannel.clear();
         this.diagnosticCollection.clear();
@@ -662,7 +735,7 @@ export function activate(context: vscode.ExtensionContext) {
     const outputChannel = vscode.window.createOutputChannel('Zeugwerk Build');
     const diagnosticCollection = vscode.languages.createDiagnosticCollection('zkbuild');
     
-    const buildService = new BuildService(outputChannel, diagnosticCollection);
+    const buildService = new BuildService(context, outputChannel, diagnosticCollection);
 
     let isBuilding = false;
 
@@ -683,15 +756,12 @@ export function activate(context: vscode.ExtensionContext) {
         isBuilding = true;
 
         try {
-            if (workspaceFolders.length > 1) {
-                const selected = await vscode.window.showWorkspaceFolderPick();
-                if (!selected) {
-                    return;
-                }
-                await buildService.build(selected);
-            } else {
-                await buildService.build(workspaceFolders[0]);
+            const folder = await buildService.getWorkspaceFolderForActiveFile();
+            if (!folder) {
+                vscode.window.showErrorMessage('No workspace folder found');
+                return;
             }
+            await buildService.build(folder);
         } finally {
             isBuilding = false;
         }

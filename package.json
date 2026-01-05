@@ -1,4 +1,5 @@
 {
+  "publisher": "Zeugwerk",
   "name": "zkbuild",
   "displayName": "Zeugwerk Build Service",
   "description": "Remote TwinCAT project building using Zeugwerk build service",
@@ -27,21 +28,20 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "package": "npx @vscode/vsce package",
-    "install": "npm run compile && npx @vscode/vsce package -o zkbuild.vsix && code --install-extension zkbuild.vsix",
-    "install:force": "npm run compile && npx @vscode/vsce package -o zkbuild.vsix && code --install-extension zkbuild.vsix --force"
+    "install": "npm run compile && npx @vscode/vsce package -o zkbuild.vsix && code-server --install-extension zkbuild.vsix",
+    "install:force": "npm run compile && npx @vscode/vsce package -o zkbuild.vsix && code-server --install-extension zkbuild.vsix --force"
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.7",
     "@types/archiver": "^7.0.0",
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.74.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "adm-zip": "^0.5.10",
     "archiver": "^6.0.1",
     "form-data": "^4.0.0",
-    "ignore": "^5.2.4",
-    "keytar": "^7.9.0"
+    "ignore": "^5.2.4"
   }
 }
